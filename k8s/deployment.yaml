@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chat-app
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0        # old pod stays until new one is Ready = zero downtime
+  selector:
+    matchLabels: { app: chat-app }
+  template:
+    metadata:
+      labels: { app: chat-app }
+    spec:
+      containers:
+        - name: chat-app
+          image: local-chat-app:initial
+          imagePullPolicy: Never      # image lives in Minikube's Docker daemon
+          ports: [{ containerPort: 8000 }]
+          resources:
+            requests: { memory: "5Gi", cpu: "2" }
+            limits:   { memory: "8Gi", cpu: "4" }
+          readinessProbe:
+            httpGet: { path: /health, port: 8000 }
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 30      # allows up to ~5 min for model load
