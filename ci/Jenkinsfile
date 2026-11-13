@@ -1,7 +1,9 @@
 pipeline {
     agent any
     environment {
-        APP = 'chat-app'
+        WINDOWS_HOST = 'host.docker.internal'
+        WINDOWS_SSH_USER = 'admin'
+        WINDOWS_REPO = 'C:/Users/admin/Documents/suhrid_work/local-chat-mlops'
     }
     stages {
         stage('Checkout') {
@@ -21,36 +23,16 @@ pipeline {
                 '''
             }
         }
-        stage('Build Image') {
-            steps {
-                sh '''
-                  eval $(minikube docker-env)
-                  docker build --build-arg APP_VERSION=${IMAGE_TAG} -t local-chat-app:${IMAGE_TAG} .
-                '''
-            }
-        }
         stage('Deploy') {
             steps {
-                sh '''
-                  kubectl apply -f k8s/service.yaml
-                  kubectl apply -f k8s/deployment.yaml
-                  kubectl set image deployment/${APP} ${APP}=local-chat-app:${IMAGE_TAG}
-                  kubectl rollout status deployment/${APP} --timeout=600s
-                '''
+                sshagent(credentials: ['windows-host-ssh-key']) {
+                    sh '''
+                      ssh -o BatchMode=yes -o StrictHostKeyChecking=yes \
+                        "${WINDOWS_SSH_USER}@${WINDOWS_HOST}" \
+                        "powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ${WINDOWS_REPO}/ci/deploy.ps1 -RepoPath ${WINDOWS_REPO} -ExpectedRevision ${IMAGE_TAG}"
+                    '''
+                }
             }
-        }
-        stage('Smoke Test') {
-            steps {
-                sh '''
-                  URL=$(minikube service ${APP} --url)
-                  curl -sf $URL/health | grep ${IMAGE_TAG}
-                '''
-            }
-        }
-    }
-    post {
-        failure {
-            sh 'kubectl rollout undo deployment/chat-app || true'
         }
     }
 }

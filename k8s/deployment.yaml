@@ -7,8 +7,8 @@ spec:
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0        # old pod stays until new one is Ready = zero downtime
+      maxSurge: 0
+      maxUnavailable: 1        # replace in place; the worker cannot fit two model pods
   selector:
     matchLabels: { app: chat-app }
   template:
