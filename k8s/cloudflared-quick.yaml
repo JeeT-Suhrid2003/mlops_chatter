@@ -1,0 +1,26 @@
+# No account or domain needed, for testing only: the https://<random>.trycloudflare.com
+# URL changes every time this pod restarts. Find it with:
+#   kubectl -n chat logs deploy/cloudflared-quick | grep trycloudflare
+# Use this OR cloudflared.yaml, not both.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloudflared-quick
+  namespace: chat
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cloudflared-quick
+  template:
+    metadata:
+      labels:
+        app: cloudflared-quick
+    spec:
+      containers:
+        - name: cloudflared
+          image: cloudflare/cloudflared:latest
+          args: ["tunnel", "--no-autoupdate", "--url", "http://chat-api.chat.svc.cluster.local:8000"]
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {memory: 256Mi}

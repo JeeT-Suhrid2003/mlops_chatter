@@ -1,0 +1,30 @@
+# Permanent public URL: needs a free Cloudflare account and a domain on Cloudflare.
+# Create the tunnel in the Zero Trust dashboard (Networks -> Tunnels), add a public
+# hostname pointing at  http://chat-api.chat.svc.cluster.local:8000  and copy its token into
+#   kubectl -n chat create secret generic tunnel-token --from-literal=TOKEN=<token>
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloudflared
+  namespace: chat
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cloudflared
+  template:
+    metadata:
+      labels:
+        app: cloudflared
+    spec:
+      containers:
+        - name: cloudflared
+          image: cloudflare/cloudflared:latest
+          args: ["tunnel", "--no-autoupdate", "run"]
+          env:
+            - name: TUNNEL_TOKEN
+              valueFrom:
+                secretKeyRef: {name: tunnel-token, key: TOKEN}
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {memory: 256Mi}

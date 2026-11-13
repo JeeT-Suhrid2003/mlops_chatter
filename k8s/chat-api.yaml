@@ -1,0 +1,86 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: chat
+---
+# Caches the downloaded model so restarts don't re-download it every time
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: model-cache
+  namespace: chat
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chat-api
+  namespace: chat
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0   # old pod keeps serving until the new one is Ready
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: chat-api
+  template:
+    metadata:
+      labels:
+        app: chat-api
+    spec:
+      containers:
+        - name: api
+          image: chat-api:local        # built locally and loaded into the cluster (see README)
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          env:
+            - name: MODEL_REPO
+              value: "your-hf-username/chat-model-lora"   # <-- change me
+            - name: MODEL_REVISION
+              value: "main"            # the deploy workflow overwrites this with a commit SHA
+            - name: ALLOWED_ORIGINS
+              value: "https://your-website.example"       # <-- change me ("*" while testing)
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef: {name: chat-secrets, key: HF_TOKEN}
+            - name: API_KEY
+              valueFrom:
+                secretKeyRef: {name: chat-secrets, key: API_KEY, optional: true}
+          volumeMounts:
+            - name: model-cache
+              mountPath: /models
+          resources:
+            requests: {cpu: "1", memory: 3Gi}
+            limits: {memory: 6Gi}
+          startupProbe:                # model download + load can take a few minutes
+            httpGet: {path: /health, port: 8000}
+            periodSeconds: 10
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: {path: /health, port: 8000}
+            periodSeconds: 10
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: model-cache
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: chat-api
+  namespace: chat
+spec:
+  selector:
+    app: chat-api
+  ports:
+    - port: 8000
+      targetPort: 8000

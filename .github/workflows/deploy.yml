@@ -1,0 +1,44 @@
+name: Deploy model
+
+on:
+  repository_dispatch:
+    types: [hf-model-updated]     # fired by the Cloudflare Worker when a new model lands on HF main
+  workflow_dispatch:
+    inputs:
+      revision:
+        description: "HF commit SHA or tag to deploy (blank = main)"
+        required: false
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: self-hosted          # the runner on your 20 GB machine, which can reach your local cluster
+    steps:
+      - name: Roll out new model revision
+        env:
+          REVISION: ${{ github.event.client_payload.sha || github.event.inputs.revision || 'main' }}
+        run: |
+          set -euo pipefail
+          echo "Deploying model revision: $REVISION"
+          CURRENT=$(kubectl -n chat get deployment/chat-api \
+            -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="MODEL_REVISION")].value}')
+          if [ "$CURRENT" = "$REVISION" ]; then
+            # Same revision (e.g. "main" re-pushed): restart so the pod re-downloads it.
+            kubectl -n chat rollout restart deployment/chat-api
+          else
+            # Changing the env var triggers exactly one rolling update to that revision.
+            kubectl -n chat set env deployment/chat-api MODEL_REVISION="$REVISION"
+          fi
+
+      - name: Wait for the new pod to become Ready
+        id: wait
+        run: kubectl -n chat rollout status deployment/chat-api --timeout=15m
+
+      - name: Roll back on failure
+        if: failure() && steps.wait.outcome == 'failure'
+        run: |
+          kubectl -n chat rollout undo deployment/chat-api   # restores the previous MODEL_REVISION too
+          kubectl -n chat rollout status deployment/chat-api --timeout=10m
